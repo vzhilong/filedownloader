@@ -10,7 +10,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import okhttp3.Call;
 import okhttp3.Response;
@@ -37,8 +39,7 @@ public class DownloadTask extends Handler {
     private int childPauseCount;//子线程暂停数量
     private int childFinishCount; //子线程完成数量
 
-    private long[] mProgress;
-    private File[] mProcessFiles;
+    private Map<String, Long> mProgress;
     private File mTmpFile;//临时占位文件
     private boolean pause;//是否暂停
     private boolean cancel;//是否取消下载
@@ -53,8 +54,7 @@ public class DownloadTask extends Handler {
     DownloadTask(FilePoint point, DownloadListener listener) {
         this.mPoint = point;
         this.mListener = listener;
-        this.mProgress = new long[THREAD_COUNT];
-        this.mProcessFiles = new File[THREAD_COUNT];
+        this.mProgress = new HashMap<>();
     }
 
     /**
@@ -68,8 +68,8 @@ public class DownloadTask extends Handler {
         switch (msg.what) {
             case MSG_ON_PROGRESS://进度
                 long progress = 0;
-                for (int i = 0, length = mProgress.length; i < length; i++) {
-                    progress += mProgress[i];
+                for (Long v : mProgress.values()) {
+                    progress += v;
                 }
                 mListener.onProgress(mPoint.getUrl(), progress, mFileLength);
                 break;
@@ -99,8 +99,8 @@ public class DownloadTask extends Handler {
                     return;
                 }
                 resetStatus();
+                mProgress.clear();
 
-                mProgress = new long[THREAD_COUNT];
                 mListener.onCancel(mPoint.getUrl());
                 break;
         }
@@ -132,17 +132,18 @@ public class DownloadTask extends Handler {
                     mFileLength = response.body().contentLength();
                     close(response);
 
+                    String recordKey = MD5.encrypt(mPoint.getUrl());
                     boolean showContinueDownload = false;
                     mTmpFile = new File(mPoint.getFilePath(), mPoint.getFileName() + ".tmp");
                     if (mTmpFile.exists() && mTmpFile.length() == mFileLength) {
-                        DownloadRecord downloadRecord = DownloadDBHelper.getInstance().getRecord(mPoint.getUrl());
+                        DownloadRecord downloadRecord = DownloadDBHelper.getInstance().getRecord(recordKey);
                         if (downloadRecord != null && downloadRecord.fileLength == mFileLength) {
-                            List<DownloadSubProcess> subProcessList = DownloadDBHelper.getInstance().getSubProcess(downloadRecord.id);
+                            List<DownloadSubProcess> subProcessList = DownloadDBHelper.getInstance().getSubProcess(recordKey);
                             if (subProcessList != null && !subProcessList.isEmpty()) {
                                 showContinueDownload = true;
 
                                 for (DownloadSubProcess subProcess : subProcessList) {
-                                    download(subProcess, subProcess.startIdx, subProcess.endIdx);
+                                    download(subProcess, subProcess.startIdx, subProcess.currentIndex, subProcess.endIdx);
                                 }
                             }
                         }
@@ -155,17 +156,17 @@ public class DownloadTask extends Handler {
                         if (mTmpFile.exists()) {
                             mTmpFile.delete();
                         }
-                        DownloadRecord oldDownloadRecord = DownloadDBHelper.getInstance().getRecord(mPoint.getUrl());
+                        DownloadRecord oldDownloadRecord = DownloadDBHelper.getInstance().getRecord(recordKey);
                         if (oldDownloadRecord != null) {
-                            DownloadDBHelper.getInstance().deleteRecord(mPoint.getUrl());
-                            DownloadDBHelper.getInstance().clearSubProcess(oldDownloadRecord.id);
+                            DownloadDBHelper.getInstance().deleteRecord(recordKey);
+                            DownloadDBHelper.getInstance().clearSubProcess(recordKey);
                         }
 
                         DownloadRecord downloadRecord = new DownloadRecord();
-                        downloadRecord.fileLength = mFileLength;
+                        downloadRecord.key = recordKey;
                         downloadRecord.downloadUrl = mPoint.getUrl();
-                        long id = DownloadDBHelper.getInstance().saveRecord(downloadRecord);
-
+                        downloadRecord.fileLength = mFileLength;
+                        DownloadDBHelper.getInstance().saveRecord(downloadRecord);
 
                         List<DownloadSubProcess> subProcessList = new ArrayList<>();
                         long blockSize = mFileLength / THREAD_COUNT;// 计算每个线程理论上下载的数量.
@@ -177,8 +178,9 @@ public class DownloadTask extends Handler {
                             }
 
                             DownloadSubProcess subProcess = new DownloadSubProcess();
-                            subProcess.recordId = downloadRecord.id;
+                            subProcess.recordKey = recordKey;
                             subProcess.startIdx = startIndex;
+                            subProcess.currentIndex = startIndex;
                             subProcess.endIdx = endIndex;
                             subProcessList.add(subProcess);
 
@@ -189,7 +191,7 @@ public class DownloadTask extends Handler {
                         tmpAccessFile.setLength(mFileLength);
 
                         for (DownloadSubProcess subProcess : subProcessList) {
-                            download(subProcess, subProcess.startIdx, subProcess.endIdx);
+                            download(subProcess, subProcess.startIdx, subProcess.currentIndex, subProcess.endIdx);
                         }
                     }
                 }
@@ -211,8 +213,8 @@ public class DownloadTask extends Handler {
         }
     }
 
-    public void download(final DownloadSubProcess subProcess, final long startIndex, final long endIndex) throws IOException {
-        HttpUtil.downloadFileByRange(mPoint.getUrl(), startIndex, endIndex, new okhttp3.Callback() {
+    public void download(final DownloadSubProcess subProcess, final long startIndex, final long currentIndex, final long endIndex) throws IOException {
+        HttpUtil.downloadFileByRange(mPoint.getUrl(), currentIndex, endIndex, new okhttp3.Callback() {
             @Override
             public void onResponse(Call call, Response response) throws IOException {
                 if (response.code() != 206) {// 206：请求部分资源成功码
@@ -221,11 +223,11 @@ public class DownloadTask extends Handler {
                 }
                 InputStream is = response.body().byteStream();// 获取流
                 RandomAccessFile tmpDownloadFile = new RandomAccessFile(mTmpFile, "rw");// 获取前面已创建的文件.
-                tmpDownloadFile.seek(startIndex);// 文件写入的开始位置.
+                tmpDownloadFile.seek(currentIndex);// 文件写入的开始位置.
                   /*  将网络流中的文件写入本地*/
-                byte[] buffer = new byte[1024 << 2];
+                byte[] buffer = new byte[4096];
                 int length = -1;
-                int total = 0;// 记录本次下载文件的大小
+                long total = 0;// 记录本次下载文件的大小
 
                 while ((length = is.read(buffer)) > 0) {
                     if (cancel) {
@@ -239,9 +241,9 @@ public class DownloadTask extends Handler {
                     tmpDownloadFile.write(buffer, 0, length);
                     total += length;
 
-                    DownloadDBHelper.getInstance().updateSubProcess(subProcess, startIndex + total);
+                    DownloadDBHelper.getInstance().updateSubProcess(subProcess, currentIndex + total);
                     //发送进度消息
-                    mProgress[subProcess.id] = total;
+                    mProgress.put(subProcess.recordKey, currentIndex + total - startIndex);
                     sendEmptyMessage(MSG_ON_PROGRESS);
                     //Log.d(TAG, "thread:" + threadId + ", progress:" + length);
                 }
@@ -303,7 +305,6 @@ public class DownloadTask extends Handler {
         cleanFile(mTmpFile);
         if (!isDownloading) {
             if (null != mListener) {
-                cleanFile(mProcessFiles);
                 resetStatus();
                 mListener.onCancel(mPoint.getUrl());
             }

@@ -9,14 +9,14 @@ import io.github.yedaxia.sqliteutils.Table;
 @Table(name = "download_sub_process", version = 1)
 public class DownloadSubProcess {
 
-    @Table.Column(name = "id", type = Table.Column.TYPE_INTEGER)
-    public Integer id;
-
-    @Table.Column(name = "record_id", type = Table.Column.TYPE_INTEGER)
-    public Integer recordId;
+    @Table.Column(name = "record_key", type = Table.Column.TYPE_STRING)
+    public String recordKey;
 
     @Table.Column(name = "start_idx", type = Table.Column.TYPE_LONG)
     public Long startIdx;
+
+    @Table.Column(name = "current_index", type = Table.Column.TYPE_LONG)
+    public Long currentIndex;
 
     @Table.Column(name = "end_idx", type = Table.Column.TYPE_LONG)
     public Long endIdx;

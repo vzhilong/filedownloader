@@ -36,66 +36,71 @@ public class DownloadDBHelper {
         downloadSubProcessDao.updateTable();
     }
 
+    public static DownloadDBHelper getInstance() {
+        return SingletonHolder.sInstance;
+    }
+
     public long saveRecord(DownloadRecord downloadRecord) {
         try {
-            return downloadRecordDao.insert(downloadRecord);
+            downloadRecordDao.insert(downloadRecord);
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
-            dbSqlite.closeDB();
+//            dbSqlite.closeDB();
         }
         return 0;
     }
 
-    public DownloadRecord getRecord(String url) {
+    public DownloadRecord getRecord(String key) {
         try {
-            return downloadRecordDao.queryFirstRecord("download_url = ?", url);
+            return downloadRecordDao.queryFirstRecord("key = ?", key);
         } catch (Exception e) {
             e.printStackTrace();
             return null;
         } finally {
-            dbSqlite.closeDB();
+//            dbSqlite.closeDB();
         }
     }
 
-    public void deleteRecord(DownloadRecord downloadRecord) {
+    public void deleteRecord(String key) {
         try {
-            downloadRecordDao.delete("id = ?", String.valueOf(downloadRecord.id));
+            downloadRecordDao.delete("key = ?", key);
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
-            dbSqlite.closeDB();
+//            dbSqlite.closeDB();
         }
     }
 
-    public void deleteRecord(String downloadUrl) {
+    public List<DownloadRecord> getAllRecord() {
         try {
-            int size = downloadRecordDao.delete("download_url = ?", downloadUrl);
-            Log.d("vincent", "deleted size:" + size);
+            return downloadRecordDao.queryAll();
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
-            dbSqlite.closeDB();
+//            dbSqlite.closeDB();
+        }
+
+        return null;
+    }
+
+    public void clearSubProcess(String recordKey) {
+        try {
+            downloadSubProcessDao.delete("record_key = ?", recordKey);
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+//            dbSqlite.closeDB();
         }
     }
 
-    public void clearSubProcess(int recordId) {
+    public List<DownloadSubProcess> getSubProcess(String recordKey) {
         try {
-            downloadSubProcessDao.delete("record_id = ?", String.valueOf(recordId));
+            return downloadSubProcessDao.query("record_key = ?", new String[]{recordKey});
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
-            dbSqlite.closeDB();
-        }
-    }
-
-    public List<DownloadSubProcess> getSubProcess(int recordId) {
-        try {
-            return downloadSubProcessDao.query("record_id = ?", new String[]{String.valueOf(recordId)});
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-            dbSqlite.closeDB();
+//            dbSqlite.closeDB();
         }
 
         return null;
@@ -107,7 +112,7 @@ public class DownloadDBHelper {
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
-            dbSqlite.closeDB();
+//            dbSqlite.closeDB();
         }
     }
 
@@ -117,12 +122,8 @@ public class DownloadDBHelper {
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
-            dbSqlite.closeDB();
+//            dbSqlite.closeDB();
         }
-    }
-
-    public static DownloadDBHelper getInstance() {
-        return SingletonHolder.sInstance;
     }
 
     private static class SingletonHolder {
