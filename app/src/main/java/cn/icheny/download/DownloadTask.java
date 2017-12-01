@@ -9,6 +9,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.RandomAccessFile;
+import java.util.ArrayList;
+import java.util.List;
 
 import okhttp3.Call;
 import okhttp3.Response;
@@ -19,192 +21,232 @@ import okhttp3.Response;
 
 public class DownloadTask extends Handler {
 
+    private static final String TAG = "DownloadTask";
     private final int THREAD_COUNT = 4;//线程数
+
+    private final int MSG_ON_PROGRESS = 1;//进度
+    private final int MSG_ON_FINISH = 2;//完成下载
+    private final int MSG_ON_PAUSE = 3;//暂停
+    private final int MSG_ON_CANCEL = 4;//暂停
+    private final int MSG_ON_ERROR = 5;
+
     private FilePoint mPoint;
     private long mFileLength;
-
-
     private boolean isDownloading = false;
-    private int childCanleCount;//子线程取消数量
+    private int childCancelCount;//子线程取消数量
     private int childPauseCount;//子线程暂停数量
-    private int childFinshCount;
-    private HttpUtil mHttpUtil;
+    private int childFinishCount; //子线程完成数量
+
     private long[] mProgress;
-    private File[] mCacheFiles;
+    private File[] mProcessFiles;
     private File mTmpFile;//临时占位文件
     private boolean pause;//是否暂停
     private boolean cancel;//是否取消下载
-
-    private final int MSG_PROGRESS = 1;//进度
-    private final int MSG_FINISH = 2;//完成下载
-    private final int MSG_PAUSE = 3;//暂停
-    private final int MSG_CANCEL = 4;//暂停
-    private DownloadListner mListner;//下载回调监听
+    private DownloadListener mListener;//下载回调监听
 
     /**
      * 任务管理器初始化数据
+     *
      * @param point
-     * @param l
+     * @param listener
      */
-    DownloadTask(FilePoint point, DownloadListner l) {
+    DownloadTask(FilePoint point, DownloadListener listener) {
         this.mPoint = point;
-        this.mListner = l;
+        this.mListener = listener;
         this.mProgress = new long[THREAD_COUNT];
-        this.mCacheFiles = new File[THREAD_COUNT];
-        this.mHttpUtil = HttpUtil.getInstance();
+        this.mProcessFiles = new File[THREAD_COUNT];
     }
 
     /**
      * 任务回调消息
+     *
      * @param msg
      */
     @Override
     public void handleMessage(Message msg) {
         super.handleMessage(msg);
-        if (null == mListner) {
-            return;
-        }
         switch (msg.what) {
-            case MSG_PROGRESS://进度
+            case MSG_ON_PROGRESS://进度
                 long progress = 0;
                 for (int i = 0, length = mProgress.length; i < length; i++) {
                     progress += mProgress[i];
                 }
-                mListner.onProgress(progress * 1.0f / mFileLength);
+                mListener.onProgress(mPoint.getUrl(), progress, mFileLength);
                 break;
-            case MSG_PAUSE://暂停
+            case MSG_ON_PAUSE://暂停
                 childPauseCount++;
-                if (childPauseCount % THREAD_COUNT != 0) return;
-                resetStutus();
-                mListner.onPause();
+                if (childPauseCount % THREAD_COUNT != 0) {
+                    return;
+                }
+                resetStatus();
+
+                mListener.onPause(mPoint.getUrl());
                 break;
-            case MSG_FINISH://完成
-                childFinshCount++;
-                if (childFinshCount % THREAD_COUNT != 0) return;
-                mTmpFile.renameTo(new File(mPoint.getFilePath(), mPoint.getFileName()));//下载完毕后，重命名目标文件名
-                resetStutus();
-                mListner.onFinished();
+            case MSG_ON_FINISH://完成
+                childFinishCount++;
+                if (childFinishCount % THREAD_COUNT != 0) {
+                    return;
+                }
+                resetStatus();
+
+                File output = new File(mPoint.getFilePath(), mPoint.getFileName() + "." + mPoint.getFileExt());
+                mTmpFile.renameTo(output);//下载完毕后，重命名目标文件名
+                mListener.onFinished(mPoint.getUrl(), output.getPath());
                 break;
-            case MSG_CANCEL://取消
-                childCanleCount++;
-                if (childCanleCount % THREAD_COUNT != 0) return;
-                resetStutus();
+            case MSG_ON_CANCEL://取消
+                childCancelCount++;
+                if (childCancelCount % THREAD_COUNT != 0) {
+                    return;
+                }
+                resetStatus();
+
                 mProgress = new long[THREAD_COUNT];
-                mListner.onCancel();
+                mListener.onCancel(mPoint.getUrl());
                 break;
         }
     }
 
-    private static final String TAG = "DownloadTask";
-
     public synchronized void start() {
         try {
             Log.e(TAG, "start: " + isDownloading + "\t" + mPoint.getUrl());
-            if (isDownloading) return;
+            if (isDownloading) {
+                return;
+            }
             isDownloading = true;
-            mHttpUtil.getContentLength(mPoint.getUrl(), new okhttp3.Callback() {
+            HttpUtil.getContentLength(mPoint.getUrl(), new okhttp3.Callback() {
                 @Override
                 public void onResponse(Call call, Response response) throws IOException {
-                    if (response.code() != 200) {
-                        close(response.body());
-                        resetStutus();
+                    int responseCode = response.code();
+                    if (responseCode != 200) {
+                        close(response);
+                        resetStatus();
+
+                        Message msg = Message.obtain();
+                        msg.what = MSG_ON_ERROR;
+                        msg.arg1 = ErrorType.URL_ERROR;
+                        msg.obj = "content length request, response code:" + responseCode;
+                        sendMessage(msg);
                         return;
                     }
-                    // 获取资源大小
-                    mFileLength = response.body().contentLength();
-                    close(response.body());
-                    // 在本地创建一个与资源同样大小的文件来占位
-                    mTmpFile = new File(mPoint.getFilePath(), mPoint.getFileName() + ".tmp");
-                    if (!mTmpFile.getParentFile().exists()) mTmpFile.getParentFile().mkdirs();
-                    RandomAccessFile tmpAccessFile = new RandomAccessFile(mTmpFile, "rw");
-                    tmpAccessFile.setLength(mFileLength);
-                    /*将下载任务分配给每个线程*/
-                    long blockSize = mFileLength / THREAD_COUNT;// 计算每个线程理论上下载的数量.
 
-                    /*为每个线程配置并分配任务*/
-                    for (int threadId = 0; threadId < THREAD_COUNT; threadId++) {
-                        long startIndex = threadId * blockSize; // 线程开始下载的位置
-                        long endIndex = (threadId + 1) * blockSize - 1; // 线程结束下载的位置
-                        if (threadId == (THREAD_COUNT - 1)) { // 如果是最后一个线程,将剩下的文件全部交给这个线程完成
-                            endIndex = mFileLength - 1;
+                    mFileLength = response.body().contentLength();
+                    close(response);
+
+                    boolean showContinueDownload = false;
+                    mTmpFile = new File(mPoint.getFilePath(), mPoint.getFileName() + ".tmp");
+                    if (mTmpFile.exists() && mTmpFile.length() == mFileLength) {
+                        DownloadRecord downloadRecord = DownloadDBHelper.getInstance().getRecord(mPoint.getUrl());
+                        if (downloadRecord != null && downloadRecord.fileLength == mFileLength) {
+                            List<DownloadSubProcess> subProcessList = DownloadDBHelper.getInstance().getSubProcess(downloadRecord.id);
+                            if (subProcessList != null && !subProcessList.isEmpty()) {
+                                showContinueDownload = true;
+
+                                for (DownloadSubProcess subProcess : subProcessList) {
+                                    download(subProcess, subProcess.startIdx, subProcess.endIdx);
+                                }
+                            }
                         }
-                        download(startIndex, endIndex, threadId);// 开启线程下载
+                    }
+
+                    if (!showContinueDownload) {
+                        if (!mTmpFile.getParentFile().exists()) {
+                            mTmpFile.getParentFile().mkdirs();
+                        }
+                        if (mTmpFile.exists()) {
+                            mTmpFile.delete();
+                        }
+                        DownloadRecord oldDownloadRecord = DownloadDBHelper.getInstance().getRecord(mPoint.getUrl());
+                        if (oldDownloadRecord != null) {
+                            DownloadDBHelper.getInstance().deleteRecord(mPoint.getUrl());
+                            DownloadDBHelper.getInstance().clearSubProcess(oldDownloadRecord.id);
+                        }
+
+                        DownloadRecord downloadRecord = new DownloadRecord();
+                        downloadRecord.fileLength = mFileLength;
+                        downloadRecord.downloadUrl = mPoint.getUrl();
+                        long id = DownloadDBHelper.getInstance().saveRecord(downloadRecord);
+
+
+                        List<DownloadSubProcess> subProcessList = new ArrayList<>();
+                        long blockSize = mFileLength / THREAD_COUNT;// 计算每个线程理论上下载的数量.
+                        for (int threadId = 0; threadId < THREAD_COUNT; threadId++) {
+                            long startIndex = threadId * blockSize; // 线程开始下载的位置
+                            long endIndex = (threadId + 1) * blockSize - 1; // 线程结束下载的位置
+                            if (threadId == (THREAD_COUNT - 1)) { // 如果是最后一个线程,将剩下的文件全部交给这个线程完成
+                                endIndex = mFileLength - 1;
+                            }
+
+                            DownloadSubProcess subProcess = new DownloadSubProcess();
+                            subProcess.recordId = downloadRecord.id;
+                            subProcess.startIdx = startIndex;
+                            subProcess.endIdx = endIndex;
+                            subProcessList.add(subProcess);
+
+                            DownloadDBHelper.getInstance().saveSubProcess(subProcess);
+                        }
+
+                        RandomAccessFile tmpAccessFile = new RandomAccessFile(mTmpFile, "rw");
+                        tmpAccessFile.setLength(mFileLength);
+
+                        for (DownloadSubProcess subProcess : subProcessList) {
+                            download(subProcess, subProcess.startIdx, subProcess.endIdx);
+                        }
                     }
                 }
 
                 @Override
                 public void onFailure(Call call, IOException e) {
+                    resetStatus();
+
+                    Message msg = Message.obtain();
+                    msg.what = MSG_ON_ERROR;
+                    msg.arg1 = ErrorType.URL_ERROR;
+                    msg.obj = "content length request, io exception:" + e.getMessage();
+                    sendMessage(msg);
                 }
             });
         } catch (IOException e) {
             e.printStackTrace();
-            resetStutus();
+            resetStatus();
         }
     }
 
-    public void download(final long startIndex, final long endIndex, final int threadId) throws IOException {
-        long newStartIndex = startIndex;
-        // 分段请求网络连接,分段将文件保存到本地.
-        // 加载下载位置缓存文件
-        final File cacheFile = new File(mPoint.getFilePath(), "thread" + threadId + "_" + mPoint.getFileName() + ".cache");
-        mCacheFiles[threadId] = cacheFile;
-        final RandomAccessFile cacheAccessFile = new RandomAccessFile(cacheFile, "rwd");
-        if (cacheFile.exists()) {// 如果文件存在
-            String startIndexStr = cacheAccessFile.readLine();
-            try {
-                newStartIndex = Integer.parseInt(startIndexStr);//重新设置下载起点
-            } catch (NumberFormatException e) {
-                e.printStackTrace();
-            }
-        }
-        final long finalStartIndex = newStartIndex;
-        mHttpUtil.downloadFileByRange(mPoint.getUrl(), finalStartIndex, endIndex, new okhttp3.Callback() {
+    public void download(final DownloadSubProcess subProcess, final long startIndex, final long endIndex) throws IOException {
+        HttpUtil.downloadFileByRange(mPoint.getUrl(), startIndex, endIndex, new okhttp3.Callback() {
             @Override
             public void onResponse(Call call, Response response) throws IOException {
                 if (response.code() != 206) {// 206：请求部分资源成功码
-                    resetStutus();
+                    resetStatus();
                     return;
                 }
                 InputStream is = response.body().byteStream();// 获取流
-                RandomAccessFile tmpAccessFile = new RandomAccessFile(mTmpFile, "rw");// 获取前面已创建的文件.
-                tmpAccessFile.seek(finalStartIndex);// 文件写入的开始位置.
+                RandomAccessFile tmpDownloadFile = new RandomAccessFile(mTmpFile, "rw");// 获取前面已创建的文件.
+                tmpDownloadFile.seek(startIndex);// 文件写入的开始位置.
                   /*  将网络流中的文件写入本地*/
                 byte[] buffer = new byte[1024 << 2];
                 int length = -1;
                 int total = 0;// 记录本次下载文件的大小
-                long progress = 0;
+
                 while ((length = is.read(buffer)) > 0) {
                     if (cancel) {
-                        //关闭资源
-                        close(cacheAccessFile, is, response.body());
-                        cleanFile(cacheFile);
-                        sendEmptyMessage(MSG_CANCEL);
+                        sendEmptyMessage(MSG_ON_CANCEL);
                         return;
                     }
                     if (pause) {
-                        //关闭资源
-                        close(cacheAccessFile, is, response.body());
-                        //发送暂停消息
-                        sendEmptyMessage(MSG_PAUSE);
+                        sendEmptyMessage(MSG_ON_PAUSE);
                         return;
                     }
-                    tmpAccessFile.write(buffer, 0, length);
+                    tmpDownloadFile.write(buffer, 0, length);
                     total += length;
-                    progress = finalStartIndex + total;
 
-                    //将当前现在到的位置保存到文件中
-                    cacheAccessFile.seek(0);
-                    cacheAccessFile.write((progress + "").getBytes("UTF-8"));
+                    DownloadDBHelper.getInstance().updateSubProcess(subProcess, startIndex + total);
                     //发送进度消息
-                    mProgress[threadId] = progress - startIndex;
-                    sendEmptyMessage(MSG_PROGRESS);
+                    mProgress[subProcess.id] = total;
+                    sendEmptyMessage(MSG_ON_PROGRESS);
+                    //Log.d(TAG, "thread:" + threadId + ", progress:" + length);
                 }
-                //关闭资源
-                close(cacheAccessFile, is, response.body());
-                // 删除临时文件
-                cleanFile(cacheFile);
                 //发送完成消息
-                sendEmptyMessage(MSG_FINISH);
+                sendEmptyMessage(MSG_ON_FINISH);
             }
 
             @Override
@@ -260,10 +302,10 @@ public class DownloadTask extends Handler {
         cancel = true;
         cleanFile(mTmpFile);
         if (!isDownloading) {
-            if (null != mListner) {
-                cleanFile(mCacheFiles);
-                resetStutus();
-                mListner.onCancel();
+            if (null != mListener) {
+                cleanFile(mProcessFiles);
+                resetStatus();
+                mListener.onCancel(mPoint.getUrl());
             }
         }
     }
@@ -271,7 +313,7 @@ public class DownloadTask extends Handler {
     /**
      * 重置下载状态
      */
-    private void resetStutus() {
+    private void resetStatus() {
         pause = false;
         cancel = false;
         isDownloading = false;

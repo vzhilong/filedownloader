@@ -5,47 +5,32 @@ package cn.icheny.download;
  */
 
 public class FilePoint {
-    private String fileName;//文件名
     private String url;//下载地址
     private String filePath;//下载目录
+    private String fileName;//文件名
+    private String fileExt; //
 
-    public FilePoint(String url) {
-        this.url = url;
-    }
-
-    public FilePoint(String filePath, String url) {
-        this.filePath = filePath;
-        this.url = url;
-    }
-
-    public FilePoint(String url, String filePath, String fileName) {
+    public FilePoint(String url, String filePath, String fileName, String fileExt) {
         this.url = url;
         this.filePath = filePath;
         this.fileName = fileName;
-    }
-
-    public String getFileName() {
-        return fileName;
-    }
-
-    public void setFileName(String fileName) {
-        this.fileName = fileName;
+        this.fileExt = fileExt;
     }
 
     public String getUrl() {
         return url;
     }
 
-    public void setUrl(String url) {
-        this.url = url;
+    public String getFileName() {
+        return fileName;
     }
 
     public String getFilePath() {
         return filePath;
     }
 
-    public void setFilePath(String filePath) {
-        this.filePath = filePath;
+    public String getFileExt() {
+        return fileExt;
     }
 
 }
