@@ -6,13 +6,16 @@ package cn.icheny.download;
  * @author Cheny
  */
 public interface DownloadListener {
-    void onFinished(String url, String filePath);
+
+    void onStart(String url, long sofar, long total);
 
     void onProgress(String url, long sofar, long total);
 
+    void onFinished(String url, String filePath);
+
     void onPause(String url);
 
-    void onCancel(String url);
+    void onDelete(String url);
 
-    void onError(int errorType);
+    void onError(String url, int errorType);
 }

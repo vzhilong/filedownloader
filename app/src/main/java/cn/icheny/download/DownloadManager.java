@@ -70,7 +70,7 @@ public class DownloadManager {
         for (int i = 0, length = urls.length; i < length; i++) {
             String url = urls[i];
             if (mDownloadTasks.containsKey(url)) {
-                mDownloadTasks.get(url).cancel();
+                mDownloadTasks.get(url).delete();
             }
         }
     }

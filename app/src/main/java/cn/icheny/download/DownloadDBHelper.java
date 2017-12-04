@@ -1,8 +1,12 @@
 package cn.icheny.download;
 
-import android.util.Log;
+import android.content.Context;
+import android.content.SharedPreferences;
+
+import com.alibaba.fastjson.JSON;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 
 import io.github.yedaxia.sqliteutils.DaoFactory;
@@ -19,11 +23,15 @@ public class DownloadDBHelper {
     private IBaseDao<DownloadRecord> downloadRecordDao;
     private IBaseDao<DownloadSubProcess> downloadSubProcessDao;
 
+    private SharedPreferences mSubSP;
+
     public DownloadDBHelper() {
         File dir = MyApplication.sApp.getDatabasePath(BuildConfig.APPLICATION_ID);
         if (!dir.exists()) {
             dir.mkdirs();
         }
+
+        mSubSP = MyApplication.sApp.getSharedPreferences("download_sub_process", Context.MODE_PRIVATE);
 
         dbSqlite = new DbSqlite(MyApplication.sApp, dir.getPath() + "/default.db");
 
@@ -85,45 +93,38 @@ public class DownloadDBHelper {
     }
 
     public void clearSubProcess(String recordKey) {
-        try {
-            downloadSubProcessDao.delete("record_key = ?", recordKey);
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-//            dbSqlite.closeDB();
+        for (int i = 0; ; i++) {
+            String key = String.format("download_sub_%s_%s", recordKey, i);
+            if (mSubSP.contains(key)) {
+                mSubSP.edit().remove(key).apply();
+            } else {
+                break;
+            }
         }
     }
 
     public List<DownloadSubProcess> getSubProcess(String recordKey) {
-        try {
-            return downloadSubProcessDao.query("record_key = ?", new String[]{recordKey});
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-//            dbSqlite.closeDB();
+        List<DownloadSubProcess> allSubProcess = new ArrayList<>();
+        for (int i = 0; ; i++) {
+            String key = String.format("download_sub_%s_%s", recordKey, i);
+            if (mSubSP.contains(key)) {
+                String str = mSubSP.getString(key, null);
+                if (str == null) {
+                    break;
+                } else {
+                    allSubProcess.add(JSON.parseObject(str, DownloadSubProcess.class));
+                }
+            } else {
+                break;
+            }
         }
 
-        return null;
+        return allSubProcess;
     }
 
     public void saveSubProcess(DownloadSubProcess subProcess) {
-        try {
-            downloadSubProcessDao.insert(subProcess);
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-//            dbSqlite.closeDB();
-        }
-    }
-
-    public void updateSubProcess(DownloadSubProcess subProcess, long startIdx) {
-        try {
-            downloadSubProcessDao.update(subProcess, "start_idx = ?", String.valueOf(startIdx));
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-//            dbSqlite.closeDB();
-        }
+        String key = String.format("download_sub_%s_%s", subProcess.recordKey, subProcess.subId);
+        mSubSP.edit().putString(key, JSON.toJSONString(subProcess)).apply();
     }
 
     private static class SingletonHolder {

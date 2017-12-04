@@ -32,8 +32,9 @@ public class MainActivity extends AppCompatActivity {
 
     DownloadManager mDownloadManager;
     String wechatUrl = "http://dldir1.qq.com/weixin/android/weixin657android1040.apk";
-    String qqUrl = "https://qd.myapp.com/myapp/qqteam/AndroidQQ/mobileqq_android.apk";
-
+    //    String wechatUrl = "http://raw.yiyoushuo.com/channelApk/com.chufang.yiyoushuo_nochannel_201711242021_release_v1.8.9.015_15_yys-pc_0.apk";
+    //    String qqUrl = "https://qd.myapp.com/myapp/qqteam/AndroidQQ/mobileqq_android.apk";
+    String qqUrl = "http://box.raw.yiyoushuo.com/APK/e1ecbaf9-c743-45ec-ad68-6a1564ed60f1.apk1";
     String url[] = new String[]{
             "http://box.raw.yiyoushuo.com/APK/29b28449-58a7-4269-bec2-7a09f5311308.apk",
             "http://box.raw.yiyoushuo.com/APK/e1ecbaf9-c743-45ec-ad68-6a1564ed60f1.apk",
@@ -55,6 +56,14 @@ public class MainActivity extends AppCompatActivity {
         mDownloadManager.initDefaultDir(getApplicationContext().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS).getPath());
 
         mDownloadManager.add(wechatUrl, new DownloadListener() {
+
+            @Override
+            public void onStart(String url, long sofar, long total) {
+                float progress = sofar * 1F / total;
+                pb_progress1.setProgress((int) (progress * 100));
+                tv_progress1.setText(String.format("%.2f", progress * 100) + "%");
+            }
+
             @Override
             public void onFinished(String url, String filePath) {
                 Toast.makeText(MainActivity.this, "下载完成!", Toast.LENGTH_SHORT).show();
@@ -74,7 +83,7 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
-            public void onCancel(String url) {
+            public void onDelete(String url) {
                 tv_progress1.setText("0%");
                 pb_progress1.setProgress(0);
                 btn_download1.setText("下载");
@@ -82,12 +91,20 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
-            public void onError(int errorType) {
+            public void onError(String url, int errorType) {
                 Toast.makeText(MainActivity.this, errorType + "", Toast.LENGTH_SHORT).show();
             }
         });
 
         mDownloadManager.add(qqUrl, new DownloadListener() {
+
+            @Override
+            public void onStart(String url, long sofar, long total) {
+                float progress = sofar * 1F / total;
+                pb_progress1.setProgress((int) (progress * 100));
+                tv_progress1.setText(String.format("%.2f", progress * 100) + "%");
+            }
+
             @Override
             public void onFinished(String url, String filePath) {
                 Toast.makeText(MainActivity.this, "下载完成!", Toast.LENGTH_SHORT).show();
@@ -108,7 +125,7 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
-            public void onCancel(String url) {
+            public void onDelete(String url) {
                 tv_progress2.setText("0%");
                 pb_progress2.setProgress(0);
                 btn_download2.setText("下载");
@@ -116,7 +133,7 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
-            public void onError(int errorType) {
+            public void onError(String url, int errorType) {
                 Toast.makeText(MainActivity.this, errorType + "", Toast.LENGTH_SHORT).show();
             }
         });
@@ -150,57 +167,19 @@ public class MainActivity extends AppCompatActivity {
     public void downloadOrPause(View view) {
         switch (view.getId()) {
             case R.id.btn_download1:
-                if (!mDownloadManager.isDownloading(wechatUrl)) {
-                    mDownloadManager.download(wechatUrl);
-                    btn_download1.setText("暂停");
-
-                } else {
-                    btn_download1.setText("下载");
-                    mDownloadManager.pause(wechatUrl);
-                }
+                mDownloadManager.download(wechatUrl);
                 break;
-            case R.id.btn_download2:
-                if (!mDownloadManager.isDownloading(qqUrl)) {
-                    mDownloadManager.download(qqUrl);
-                    btn_download2.setText("暂停");
-                } else {
-                    btn_download2.setText("下载");
-                    mDownloadManager.pause(qqUrl);
-                }
+            case R.id.btn_pause1:
+                mDownloadManager.pause(wechatUrl);
                 break;
-        }
-    }
-
-    public void downloadAll(View view) {
-        mDownloadManager.download(wechatUrl, qqUrl);//最好传入个String[]数组进去
-//
-//        if (!mDownloadManager.isDownloading(wechatUrl, qqUrl)) {
-//            btn_download1.setText("暂停");
-//            btn_download2.setText("暂停");
-//            btn_download_all.setText("全部暂停");
-//
-//        } else {
-//            mDownloadManager.pause(wechatUrl, qqUrl);
-//            btn_download1.setText("下载");
-//            btn_download2.setText("下载");
-//            btn_download_all.setText("全部下载");
-//        }
-    }
-
-    public void pauseAll(View view) {
-        mDownloadManager.pause(wechatUrl, qqUrl);
-    }
-
-    /**
-     * 取消下载
-     *
-     * @param view
-     */
-    public void cancel(View view) {
-
-        switch (view.getId()) {
             case R.id.btn_cancel1:
                 mDownloadManager.cancel(wechatUrl);
+                break;
+            case R.id.btn_download2:
+                mDownloadManager.download(qqUrl);
+                break;
+            case R.id.btn_pause2:
+                mDownloadManager.pause(qqUrl);
                 break;
             case R.id.btn_cancel2:
                 mDownloadManager.cancel(qqUrl);
@@ -208,11 +187,16 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    public void downloadAll(View view) {
+        mDownloadManager.download(wechatUrl, qqUrl);//最好传入个String[]数组进去
+    }
+
+    public void pauseAll(View view) {
+        mDownloadManager.pause(wechatUrl, qqUrl);
+    }
+
     public void cancelAll(View view) {
         mDownloadManager.cancel(wechatUrl, qqUrl);
-        btn_download1.setText("下载");
-        btn_download2.setText("下载");
-        btn_download_all.setText("全部下载");
     }
 
     @Override

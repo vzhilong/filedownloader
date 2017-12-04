@@ -17,4 +17,7 @@ public class DownloadRecord {
 
     @Table.Column(name = "file_length", type = Table.Column.TYPE_LONG)
     public Long fileLength;
+
+    @Table.Column(name = "file_path", type = Table.Column.TYPE_STRING)
+    public String filePath;
 }

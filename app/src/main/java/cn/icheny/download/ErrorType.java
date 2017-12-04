@@ -5,7 +5,7 @@ package cn.icheny.download;
  */
 
 public interface ErrorType {
-    int UNSUPPORT_CHECKPOINT = 0;
-    int URL_ERROR = 1;
+    int NETWORK_ERROR = 1;
+    int FILE_WRITE_ERROR = 2;
 
 }
