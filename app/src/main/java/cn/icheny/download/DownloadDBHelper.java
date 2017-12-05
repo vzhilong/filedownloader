@@ -3,10 +3,7 @@ package cn.icheny.download;
 import android.content.Context;
 import android.content.SharedPreferences;
 
-import com.alibaba.fastjson.JSON;
-
 import java.io.File;
-import java.util.ArrayList;
 import java.util.List;
 
 import io.github.yedaxia.sqliteutils.DaoFactory;
@@ -20,7 +17,7 @@ import io.github.yedaxia.sqliteutils.IBaseDao;
 public class DownloadDBHelper {
 
     private DbSqlite dbSqlite;
-    private IBaseDao<DownloadRecord> downloadRecordDao;
+    private IBaseDao<DownloadProcess> downloadProcessDao;
     private IBaseDao<DownloadSubProcess> downloadSubProcessDao;
 
     private SharedPreferences mSubSP;
@@ -35,9 +32,9 @@ public class DownloadDBHelper {
 
         dbSqlite = new DbSqlite(MyApplication.sApp, dir.getPath() + "/default.db");
 
-        downloadRecordDao = DaoFactory.createGenericDao(dbSqlite, DownloadRecord.class);
-        downloadRecordDao.createTable();
-        downloadRecordDao.updateTable();
+        downloadProcessDao = DaoFactory.createGenericDao(dbSqlite, DownloadProcess.class);
+        downloadProcessDao.createTable();
+        downloadProcessDao.updateTable();
 
         downloadSubProcessDao = DaoFactory.createGenericDao(dbSqlite, DownloadSubProcess.class);
         downloadSubProcessDao.createTable();
@@ -48,83 +45,72 @@ public class DownloadDBHelper {
         return SingletonHolder.sInstance;
     }
 
-    public long saveRecord(DownloadRecord downloadRecord) {
+    public void saveProcess(DownloadProcess downloadProcess) {
         try {
-            downloadRecordDao.insert(downloadRecord);
+            downloadProcessDao.insert(downloadProcess);
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
-//            dbSqlite.closeDB();
-        }
-        return 0;
-    }
-
-    public DownloadRecord getRecord(String key) {
-        try {
-            return downloadRecordDao.queryFirstRecord("key = ?", key);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return null;
-        } finally {
-//            dbSqlite.closeDB();
         }
     }
 
-    public void deleteRecord(String key) {
+    public List<DownloadProcess> getAllProcess() {
         try {
-            downloadRecordDao.delete("key = ?", key);
+            return downloadProcessDao.queryAll();
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
-//            dbSqlite.closeDB();
         }
-    }
-
-    public List<DownloadRecord> getAllRecord() {
-        try {
-            return downloadRecordDao.queryAll();
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-//            dbSqlite.closeDB();
-        }
-
         return null;
     }
 
-    public void clearSubProcess(String recordKey) {
-        for (int i = 0; ; i++) {
-            String key = String.format("download_sub_%s_%s", recordKey, i);
-            if (mSubSP.contains(key)) {
-                mSubSP.edit().remove(key).apply();
-            } else {
-                break;
-            }
+    public void deleteProcess(String url) {
+        try {
+            downloadProcessDao.delete("download_url = ?", url);
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+//            dbSqlite.closeDB();
         }
     }
 
-    public List<DownloadSubProcess> getSubProcess(String recordKey) {
-        List<DownloadSubProcess> allSubProcess = new ArrayList<>();
-        for (int i = 0; ; i++) {
-            String key = String.format("download_sub_%s_%s", recordKey, i);
-            if (mSubSP.contains(key)) {
-                String str = mSubSP.getString(key, null);
-                if (str == null) {
-                    break;
-                } else {
-                    allSubProcess.add(JSON.parseObject(str, DownloadSubProcess.class));
-                }
-            } else {
-                break;
-            }
+    public void deleteSubProcess(String url) {
+        try {
+            downloadSubProcessDao.delete("download_url = ?", url);
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
         }
-
-        return allSubProcess;
     }
+
 
     public void saveSubProcess(DownloadSubProcess subProcess) {
-        String key = String.format("download_sub_%s_%s", subProcess.recordKey, subProcess.subId);
-        mSubSP.edit().putString(key, JSON.toJSONString(subProcess)).apply();
+        try {
+            downloadSubProcessDao.insert(subProcess);
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+        }
+    }
+
+    public List<DownloadSubProcess> getAllSubProcessList() {
+        try {
+            return downloadSubProcessDao.queryAll();
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+        }
+        return null;
+    }
+
+    public List<DownloadSubProcess> getSubProcessList(String url) {
+        try {
+            return downloadSubProcessDao.query("download_url = ?", new String[]{url});
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+        }
+        return null;
     }
 
     private static class SingletonHolder {

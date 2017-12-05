@@ -9,8 +9,8 @@ import io.github.yedaxia.sqliteutils.Table;
 @Table(name = "download_sub_process", version = 1)
 public class DownloadSubProcess {
 
-    @Table.Column(name = "record_key", type = Table.Column.TYPE_STRING)
-    public String recordKey;
+    @Table.Column(name = "download_url", type = Table.Column.TYPE_STRING)
+    public String downloadUrl;
 
     @Table.Column(name = "sub_id", type = Table.Column.TYPE_INTEGER)
     public Integer subId;

@@ -33,20 +33,17 @@ public class DownloadTask {
     static {
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .retryOnConnectionFailure(true)
-                .connectTimeout(60, TimeUnit.SECONDS)
-                .writeTimeout(60, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS);
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .writeTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS);
         sHttpClient = builder.build();
     }
 
     private final int THREAD_COUNT = 4;//线程数
-    private final int RETRY_TIMES = 10;
+    private final int RETRY_TIMES = 20;
 
     private final int STATUS_READY = 0;
     private final int STATUS_DOWNLOADING = 1;
-    private final int STATUS_FINISHED = 2;
-    private final int STATUS_PAUSE = 3;
-    private final int STATUS_ERROR = 4;
 
 
     private int status = STATUS_READY;
@@ -57,7 +54,7 @@ public class DownloadTask {
     private long mFileLength;
     private File mTmpFile;//临时占位文件
     private File mOutFile;
-    private DownloadListener mListener;//下载回调监听
+    private WrapperDownloadListener mListener;//下载回调监听
     private Handler mMainHandler;
     private boolean mStopRead = false;
     private SparseIntArray mRetryTimes = new SparseIntArray();
@@ -68,34 +65,16 @@ public class DownloadTask {
      * @param point
      * @param listener
      */
-    DownloadTask(FilePoint point, DownloadListener listener) {
+    DownloadTask(FilePoint point, WrapperDownloadListener listener) {
         this.mPoint = point;
         this.mListener = listener;
 
-        mTmpFile = new File(mPoint.getFilePath(), mPoint.getFileName() + ".tmp");
-        if (mPoint.getFileExt() == null) {
-            mOutFile = new File(mPoint.getFilePath(), mPoint.getFileName());
-        } else {
-            mOutFile = new File(mPoint.getFilePath(), mPoint.getFileName() + "." + mPoint.getFileExt());
-        }
+        mTmpFile = new File(mPoint.getTmpFilePath());
+        mOutFile = new File(mPoint.getOutFilePath());
         mMainHandler = new Handler(Looper.getMainLooper());
     }
 
-    public static boolean isFinished(String url) {
-        String recordKey = MD5.encrypt(url);
-        DownloadRecord downloadRecord = DownloadDBHelper.getInstance().getRecord(recordKey);
-        if (downloadRecord != null) {
-            File file = new File(downloadRecord.filePath);
-            if (file.exists() && downloadRecord.fileLength == file.length()) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    public synchronized void start() {
-
+    public synchronized void start(final DownloadProcess downloadProcess, final List<DownloadSubProcess> subProcessList) {
         if (status == STATUS_DOWNLOADING) {
             return;
         }
@@ -119,24 +98,20 @@ public class DownloadTask {
                 mFileLength = response.body().contentLength();
                 close(response);
 
-                String recordKey = MD5.encrypt(mPoint.getUrl());
                 boolean showContinueDownload = false;
 
+                Log.d(TAG, String.format("请求文件大小 %s, 临时文件存在与否 %s, 临时文件大小 %s", mFileLength, mTmpFile.exists(), mTmpFile.exists() ? mTmpFile.length() : 0));
                 if (mTmpFile.exists() && mTmpFile.length() == mFileLength) {
-                    DownloadRecord downloadRecord = DownloadDBHelper.getInstance().getRecord(recordKey);
-                    if (downloadRecord != null && downloadRecord.fileLength == mFileLength) {
-                        List<DownloadSubProcess> allSubProcess = DownloadDBHelper.getInstance().getSubProcess(recordKey);
-                        if (allSubProcess != null && !allSubProcess.isEmpty()) {
+                    if (downloadProcess != null && downloadProcess.fileLength == mFileLength) {
+                        if (subProcessList != null && !subProcessList.isEmpty()) {
                             showContinueDownload = true;
 
-
-                            Log.d(TAG, "继续上次下载，上次下载线程总数:" + CollectionUtils.size(allSubProcess));
-                            for (DownloadSubProcess subProcess : allSubProcess) {
+                            Log.d(TAG, "继续上次下载，上次下载线程总数:" + CollectionUtils.size(subProcessList));
+                            for (DownloadSubProcess subProcess : subProcessList) {
                                 mSavedSize.addAndGet(subProcess.currentIdx - subProcess.startIdx);
                             }
 
-                            onStart();
-                            for (DownloadSubProcess subProcess : allSubProcess) {
+                            for (DownloadSubProcess subProcess : subProcessList) {
                                 if (subProcess.currentIdx == subProcess.endIdx + 1) {
                                     // 已经下载完了
                                     Log.d(TAG, String.format("上次下载，子线程 %s 已经完成", subProcess.subId));
@@ -155,21 +130,15 @@ public class DownloadTask {
                     if (mTmpFile.exists()) {
                         mTmpFile.delete();
                     }
-                    DownloadRecord oldDownloadRecord = DownloadDBHelper.getInstance().getRecord(recordKey);
-                    if (oldDownloadRecord != null) {
-                        DownloadDBHelper.getInstance().deleteRecord(recordKey);
-                        DownloadDBHelper.getInstance().clearSubProcess(recordKey);
-                    }
+                    mListener.deleteProcess(mPoint.getUrl());
 
-                    DownloadRecord downloadRecord = new DownloadRecord();
-                    downloadRecord.key = recordKey;
-                    downloadRecord.downloadUrl = mPoint.getUrl();
-                    downloadRecord.fileLength = mFileLength;
-                    downloadRecord.filePath = mOutFile.getPath();
+                    DownloadProcess newDownloadProcess = new DownloadProcess();
+                    newDownloadProcess.downloadUrl = mPoint.getUrl();
+                    newDownloadProcess.fileLength = mFileLength;
+                    newDownloadProcess.filePath = mOutFile.getPath();
 
-                    DownloadDBHelper.getInstance().saveRecord(downloadRecord);
 
-                    List<DownloadSubProcess> allSubProcess = new ArrayList<>();
+                    List<DownloadSubProcess> newSubProcessList = new ArrayList<>();
                     long blockSize = mFileLength / THREAD_COUNT;// 计算每个线程理论上下载的数量.
                     for (int threadId = 0; threadId < THREAD_COUNT; threadId++) {
                         long startIndex = threadId * blockSize; // 线程开始下载的位置
@@ -179,15 +148,15 @@ public class DownloadTask {
                         }
 
                         DownloadSubProcess subProcess = new DownloadSubProcess();
-                        subProcess.recordKey = recordKey;
+                        subProcess.downloadUrl = mPoint.getUrl();
                         subProcess.subId = threadId;
                         subProcess.startIdx = startIndex;
                         subProcess.currentIdx = startIndex;
                         subProcess.endIdx = endIndex;
-                        allSubProcess.add(subProcess);
-
-                        DownloadDBHelper.getInstance().saveSubProcess(subProcess);
+                        newSubProcessList.add(subProcess);
                     }
+
+                    mListener.saveProcess(mPoint.getUrl(), newDownloadProcess, newSubProcessList);
 
                     try {
                         RandomAccessFile tmpAccessFile = new RandomAccessFile(mTmpFile, "rw");
@@ -198,9 +167,8 @@ public class DownloadTask {
                         return;
                     }
 
-                    Log.d(TAG, "完全下载，下载线程总数:" + CollectionUtils.size(allSubProcess));
-                    onStart();
-                    for (DownloadSubProcess subProcess : allSubProcess) {
+                    Log.d(TAG, "完全下载，下载线程总数:" + CollectionUtils.size(newSubProcessList));
+                    for (DownloadSubProcess subProcess : newSubProcessList) {
                         downloadFileByRange(subProcess);
                     }
                 }
@@ -226,17 +194,22 @@ public class DownloadTask {
         mAllCaller.add(call);
     }
 
-    public void reDownloadFileByRange(DownloadSubProcess subProcess) {
-        int retryTimes = mRetryTimes.get(subProcess.subId, 0);
-        Log.d(TAG, String.format("子线程 %s 第 %s 次重试, url: %s", subProcess.subId, retryTimes + 1, mPoint.getUrl()));
-        mRetryTimes.put(subProcess.subId, retryTimes + 1);
+    public void reDownloadFileByRange(final DownloadSubProcess subProcess) {
+        mMainHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                int retryTimes = mRetryTimes.get(subProcess.subId, 0);
+                Log.d(TAG, String.format("子线程 %s 第 %s 次延迟重试, url: %s", subProcess.subId, retryTimes + 1, mPoint.getUrl()));
+                mRetryTimes.put(subProcess.subId, retryTimes + 1);
 
-        downloadFileByRange(subProcess);
+                downloadFileByRange(subProcess);
+            }
+        }, 1_500);
     }
 
     public void downloadFileByRange(final DownloadSubProcess subProcess) {
         // 初始化已下载的量
-        Log.d(TAG, "子线程开始下载 " + subProcess.subId + ", 开始字节:" + subProcess.startIdx + ", 当前字节:" + subProcess.currentIdx + ", 结束字节:" + subProcess.endIdx);
+        Log.d(TAG, String.format("子线程 %s 开始下载, 开始字节: %s, 当前字节: %s, 结束字节: %s", subProcess.subId, subProcess.startIdx, subProcess.currentIdx, subProcess.endIdx));
         Callback requestCallback = new okhttp3.Callback() {
             @Override
             public void onResponse(Call call, Response response) {
@@ -291,6 +264,7 @@ public class DownloadTask {
                     }
                 } catch (IOException e) {
                     e.printStackTrace();
+                    Log.d(TAG, subProcess.subId + ", " + mPoint.getUrl() + ":" + e.getMessage());
                     if (mStopRead) {
                         Log.d(TAG, subProcess.subId + " 分段下载读取字节流异常，下载被取消，不再重试");
                     } else if (mRetryTimes.get(subProcess.subId, 0) < RETRY_TIMES) {
@@ -309,6 +283,7 @@ public class DownloadTask {
             @Override
             public void onFailure(Call call, IOException e) {
                 e.printStackTrace();
+                Log.d(TAG, subProcess.subId + ", " + mPoint.getUrl() + ":" + e.getMessage());
                 if (mStopRead) {
                     Log.d(TAG, subProcess.subId + " 分段下载网络异常，下载被取消，不再重试");
                 } else if (mRetryTimes.get(subProcess.subId, 0) < RETRY_TIMES) {
@@ -364,7 +339,7 @@ public class DownloadTask {
      * 暂停
      */
     public void pause() {
-        if (isDownloading()) {
+        if (status == STATUS_DOWNLOADING) {
             mStopRead = true;
             for (Call call : mAllCaller) {
                 call.cancel();
@@ -378,22 +353,16 @@ public class DownloadTask {
      * 取消
      */
     public void delete() {
-        if (isDownloading()) {
+        if (status == STATUS_DOWNLOADING) {
             mStopRead = true;
             for (Call call : mAllCaller) {
                 call.cancel();
             }
         }
 
-        String recordKey = MD5.encrypt(mPoint.getUrl());
-        DownloadRecord oldDownloadRecord = DownloadDBHelper.getInstance().getRecord(recordKey);
-        if (oldDownloadRecord != null) {
-            DownloadDBHelper.getInstance().deleteRecord(recordKey);
-            DownloadDBHelper.getInstance().clearSubProcess(recordKey);
-
-            cleanFile(mTmpFile, mOutFile);
-            onDelete();
-        }
+        mListener.deleteProcess(mPoint.getUrl());
+        cleanFile(mTmpFile, mOutFile);
+        onDelete();
     }
 
     private void error(int errorType) {
@@ -405,75 +374,36 @@ public class DownloadTask {
         onError(errorType);
     }
 
-
-    private void onStart() {
-        Log.d(TAG, "on start");
-        mMainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                mListener.onStart(mPoint.getUrl(), mSavedSize.longValue(), mFileLength);
-            }
-        });
-    }
-
     private void onProgress() {
-        mMainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                mListener.onProgress(mPoint.getUrl(), mSavedSize.longValue(), mFileLength);
-            }
-        });
+        mListener.onProgress(mPoint.getUrl(), mSavedSize.longValue(), mFileLength);
     }
+
 
     private void onFinished() {
-        status = STATUS_FINISHED;
+        status = STATUS_READY;
 
         Log.d(TAG, "on finished");
-        mMainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                mListener.onFinished(mPoint.getUrl(), mOutFile.getPath());
-            }
-        });
+        mListener.onFinished(mPoint.getUrl(), mOutFile.getPath());
     }
 
     private void onPause() {
-        status = STATUS_PAUSE;
+        status = STATUS_READY;
 
         Log.d(TAG, "on pause");
-        mMainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                mListener.onPause(mPoint.getUrl());
-            }
-        });
+        mListener.onPause(mPoint.getUrl());
     }
 
-    private void onError(final int errorType) {
-        status = STATUS_ERROR;
+    private void onError(int errorType) {
+        status = STATUS_READY;
 
         Log.d(TAG, "on error");
-        mMainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                mListener.onError(mPoint.getUrl(), errorType);
-            }
-        });
+        mListener.onError(mPoint.getUrl(), errorType);
     }
 
     private void onDelete() {
         status = STATUS_READY;
 
         Log.d(TAG, "on cancel");
-        mMainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                mListener.onDelete(mPoint.getUrl());
-            }
-        });
-    }
-
-    public boolean isDownloading() {
-        return status == STATUS_DOWNLOADING;
+        mListener.onDelete(mPoint.getUrl());
     }
 }

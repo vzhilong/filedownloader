@@ -27,14 +27,14 @@ import java.io.File;
 public class MainActivity extends AppCompatActivity {
     private static final int PERMISSION_REQUEST_CODE = 001;
     TextView tv_file_name1, tv_progress1, tv_file_name2, tv_progress2;
-    Button btn_download1, btn_download2, btn_download_all;
+    Button btn_download1, btn_download2;
     ProgressBar pb_progress1, pb_progress2;
 
     DownloadManager mDownloadManager;
-    String wechatUrl = "http://dldir1.qq.com/weixin/android/weixin657android1040.apk";
-    //    String wechatUrl = "http://raw.yiyoushuo.com/channelApk/com.chufang.yiyoushuo_nochannel_201711242021_release_v1.8.9.015_15_yys-pc_0.apk";
-    //    String qqUrl = "https://qd.myapp.com/myapp/qqteam/AndroidQQ/mobileqq_android.apk";
-    String qqUrl = "http://box.raw.yiyoushuo.com/APK/e1ecbaf9-c743-45ec-ad68-6a1564ed60f1.apk1";
+    //    String wechatUrl = "http://dldir1.qq.com/weixin/android/weixin657android1040.apk";
+    String wechatUrl = "http://box.raw.yiyoushuo.com/APK/e1ecbaf9-c743-45ec-ad68-6a1564ed60f1.apk";
+    String qqUrl = "https://qd.myapp.com/myapp/qqteam/AndroidQQ/mobileqq_android.apk";
+    //    String qqUrl = "http://box.raw.yiyoushuo.com/APK/e1ecbaf9-c743-45ec-ad68-6a1564ed60f1.apk";
     String url[] = new String[]{
             "http://box.raw.yiyoushuo.com/APK/29b28449-58a7-4269-bec2-7a09f5311308.apk",
             "http://box.raw.yiyoushuo.com/APK/e1ecbaf9-c743-45ec-ad68-6a1564ed60f1.apk",
@@ -51,92 +51,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void initDownloads() {
-
         mDownloadManager = DownloadManager.getInstance();
         mDownloadManager.initDefaultDir(getApplicationContext().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS).getPath());
-
-        mDownloadManager.add(wechatUrl, new DownloadListener() {
-
-            @Override
-            public void onStart(String url, long sofar, long total) {
-                float progress = sofar * 1F / total;
-                pb_progress1.setProgress((int) (progress * 100));
-                tv_progress1.setText(String.format("%.2f", progress * 100) + "%");
-            }
-
-            @Override
-            public void onFinished(String url, String filePath) {
-                Toast.makeText(MainActivity.this, "下载完成!", Toast.LENGTH_SHORT).show();
-                openApk(filePath);
-            }
-
-            @Override
-            public void onProgress(String url, long sofar, long total) {
-                float progress = sofar * 1F / total;
-                pb_progress1.setProgress((int) (progress * 100));
-                tv_progress1.setText(String.format("%.2f", progress * 100) + "%");
-            }
-
-            @Override
-            public void onPause(String url) {
-                Toast.makeText(MainActivity.this, "暂停了!", Toast.LENGTH_SHORT).show();
-            }
-
-            @Override
-            public void onDelete(String url) {
-                tv_progress1.setText("0%");
-                pb_progress1.setProgress(0);
-                btn_download1.setText("下载");
-                Toast.makeText(MainActivity.this, "下载已取消!", Toast.LENGTH_SHORT).show();
-            }
-
-            @Override
-            public void onError(String url, int errorType) {
-                Toast.makeText(MainActivity.this, errorType + "", Toast.LENGTH_SHORT).show();
-            }
-        });
-
-        mDownloadManager.add(qqUrl, new DownloadListener() {
-
-            @Override
-            public void onStart(String url, long sofar, long total) {
-                float progress = sofar * 1F / total;
-                pb_progress1.setProgress((int) (progress * 100));
-                tv_progress1.setText(String.format("%.2f", progress * 100) + "%");
-            }
-
-            @Override
-            public void onFinished(String url, String filePath) {
-                Toast.makeText(MainActivity.this, "下载完成!", Toast.LENGTH_SHORT).show();
-                openApk(filePath);
-            }
-
-            @Override
-            public void onProgress(String url, long sofar, long total) {
-                float progress = sofar * 1F / total;
-                pb_progress2.setProgress((int) (progress * 100));
-                tv_progress2.setText(String.format("%.2f", progress * 100) + "%");
-            }
-
-
-            @Override
-            public void onPause(String url) {
-                Toast.makeText(MainActivity.this, "暂停了!", Toast.LENGTH_SHORT).show();
-            }
-
-            @Override
-            public void onDelete(String url) {
-                tv_progress2.setText("0%");
-                pb_progress2.setProgress(0);
-                btn_download2.setText("下载");
-                Toast.makeText(MainActivity.this, "下载已取消!", Toast.LENGTH_SHORT).show();
-            }
-
-            @Override
-            public void onError(String url, int errorType) {
-                Toast.makeText(MainActivity.this, errorType + "", Toast.LENGTH_SHORT).show();
-            }
-        });
+        mDownloadManager.initDownloadProcess();
     }
 
     /**
@@ -154,9 +71,6 @@ public class MainActivity extends AppCompatActivity {
         pb_progress2 = (ProgressBar) findViewById(R.id.pb_progress2);
         btn_download2 = (Button) findViewById(R.id.btn_download2);
         tv_file_name2.setText("qq");
-
-        btn_download_all = (Button) findViewById(R.id.btn_download_all);
-
     }
 
     /**
@@ -167,36 +81,89 @@ public class MainActivity extends AppCompatActivity {
     public void downloadOrPause(View view) {
         switch (view.getId()) {
             case R.id.btn_download1:
-                mDownloadManager.download(wechatUrl);
+                mDownloadManager.download(wechatUrl, new DownloadListener() {
+
+                    @Override
+                    public void onFinished(String url, String filePath) {
+                        Toast.makeText(MainActivity.this, "下载完成!", Toast.LENGTH_SHORT).show();
+                        openApk(filePath);
+                    }
+
+                    @Override
+                    public void onProgress(String url, long sofar, long total) {
+                        float progress = sofar * 1F / total;
+                        pb_progress1.setProgress((int) (progress * 100));
+                        tv_progress1.setText(String.format("%.2f", progress * 100) + "%");
+                    }
+
+                    @Override
+                    public void onPause(String url) {
+                        Toast.makeText(MainActivity.this, "暂停了!", Toast.LENGTH_SHORT).show();
+                    }
+
+                    @Override
+                    public void onDelete(String url) {
+                        tv_progress1.setText("0%");
+                        pb_progress1.setProgress(0);
+                        btn_download1.setText("下载");
+                        Toast.makeText(MainActivity.this, "下载已取消!", Toast.LENGTH_SHORT).show();
+                    }
+
+                    @Override
+                    public void onError(String url, int errorType) {
+                        Toast.makeText(MainActivity.this, errorType + "", Toast.LENGTH_SHORT).show();
+                    }
+                });
                 break;
             case R.id.btn_pause1:
                 mDownloadManager.pause(wechatUrl);
                 break;
             case R.id.btn_cancel1:
-                mDownloadManager.cancel(wechatUrl);
+                mDownloadManager.delete(wechatUrl);
                 break;
             case R.id.btn_download2:
-                mDownloadManager.download(qqUrl);
+                mDownloadManager.download(qqUrl, new DownloadListener() {
+
+                    @Override
+                    public void onFinished(String url, String filePath) {
+                        Toast.makeText(MainActivity.this, "下载完成!", Toast.LENGTH_SHORT).show();
+                        openApk(filePath);
+                    }
+
+                    @Override
+                    public void onProgress(String url, long sofar, long total) {
+                        float progress = sofar * 1F / total;
+                        pb_progress2.setProgress((int) (progress * 100));
+                        tv_progress2.setText(String.format("%.2f", progress * 100) + "%");
+                    }
+
+
+                    @Override
+                    public void onPause(String url) {
+                        Toast.makeText(MainActivity.this, "暂停了!", Toast.LENGTH_SHORT).show();
+                    }
+
+                    @Override
+                    public void onDelete(String url) {
+                        tv_progress2.setText("0%");
+                        pb_progress2.setProgress(0);
+                        btn_download2.setText("下载");
+                        Toast.makeText(MainActivity.this, "下载已取消!", Toast.LENGTH_SHORT).show();
+                    }
+
+                    @Override
+                    public void onError(String url, int errorType) {
+                        Toast.makeText(MainActivity.this, errorType + "", Toast.LENGTH_SHORT).show();
+                    }
+                });
                 break;
             case R.id.btn_pause2:
                 mDownloadManager.pause(qqUrl);
                 break;
             case R.id.btn_cancel2:
-                mDownloadManager.cancel(qqUrl);
+                mDownloadManager.delete(qqUrl);
                 break;
         }
-    }
-
-    public void downloadAll(View view) {
-        mDownloadManager.download(wechatUrl, qqUrl);//最好传入个String[]数组进去
-    }
-
-    public void pauseAll(View view) {
-        mDownloadManager.pause(wechatUrl, qqUrl);
-    }
-
-    public void cancelAll(View view) {
-        mDownloadManager.cancel(wechatUrl, qqUrl);
     }
 
     @Override

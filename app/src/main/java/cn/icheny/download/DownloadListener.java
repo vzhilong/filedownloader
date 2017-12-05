@@ -7,8 +7,6 @@ package cn.icheny.download;
  */
 public interface DownloadListener {
 
-    void onStart(String url, long sofar, long total);
-
     void onProgress(String url, long sofar, long total);
 
     void onFinished(String url, String filePath);
