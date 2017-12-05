@@ -25,14 +25,11 @@ public class DownloadManager implements WrapperDownloadListener {
     private Map<String, DownloadProcess> mDownloadProcess;
     private Map<String, List<DownloadSubProcess>> mDownloadSubProcess;
 
-
-    private Handler mMainHandler;
     private Handler mWorkHandler;
 
     public DownloadManager() {
         mDownloadTasks = new HashMap<>();
 
-        mMainHandler = new Handler(Looper.getMainLooper());
         HandlerThread workThread = new HandlerThread("work-thread");
         workThread.start();
         mWorkHandler = new Handler(workThread.getLooper());
@@ -104,14 +101,14 @@ public class DownloadManager implements WrapperDownloadListener {
     /**
      * 添加下载任务
      */
-    public void download(String url, DownloadListener listener) {
-        download(url, defaultDir, MD5.encrypt(url), "apk", listener);
+    public void download(String url) {
+        download(url, defaultDir, MD5.encrypt(url), "apk");
     }
 
     /**
      * 添加下载任务
      */
-    public void download(String url, String filePath, String fileName, String fileExt, DownloadListener listener) {
+    public void download(String url, String filePath, String fileName, String fileExt) {
         FilePoint point = new FilePoint(url, filePath, fileName, fileExt);
 
         DownloadProcess downloadProcess = mDownloadProcess.get(url);
@@ -123,7 +120,7 @@ public class DownloadManager implements WrapperDownloadListener {
     /**
      * 添加下载任务
      */
-    public void readyForDownload(String url, String filePath, String fileName, String fileExt, DownloadListener listener) {
+    public void readyForDownload(String url, String filePath, String fileName, String fileExt) {
         final FilePoint point = new FilePoint(url, filePath, fileName, fileExt);
         if (mDownloadProcess.containsKey(url)) {
             // do nothing
@@ -144,71 +141,26 @@ public class DownloadManager implements WrapperDownloadListener {
 
     @Override
     public void onProgress(final String url, final long sofar, final long total) {
-        if (Looper.getMainLooper() != Looper.myLooper()) {
-            mMainHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    onProgress(url, sofar, total);
-                }
-            });
-            return;
-        }
 
     }
 
     @Override
     public void onFinished(final String url, final String filePath) {
-        if (Looper.getMainLooper() != Looper.myLooper()) {
-            mMainHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    onFinished(url, filePath);
-                }
-            });
-            return;
-        }
 
     }
 
     @Override
     public void onPause(final String url) {
-        if (Looper.getMainLooper() != Looper.myLooper()) {
-            mMainHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    onPause(url);
-                }
-            });
-            return;
-        }
 
     }
 
     @Override
     public void onDelete(final String url) {
-        if (Looper.getMainLooper() != Looper.myLooper()) {
-            mMainHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    onDelete(url);
-                }
-            });
-            return;
-        }
 
     }
 
     @Override
     public void onError(final String url, final int errorType) {
-        if (Looper.getMainLooper() != Looper.myLooper()) {
-            mMainHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    onError(url, errorType);
-                }
-            });
-            return;
-        }
 
     }
 
